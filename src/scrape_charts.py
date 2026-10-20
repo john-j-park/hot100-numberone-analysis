@@ -53,6 +53,8 @@ def clean_year(df: pd.DataFrame, year: int) -> pd.DataFrame:
     new_song = new_song.str.extract(r'"(.*?)"',expand=False)
     df["song"] = new_song
 
+    df["no"] = pd.to_numeric(df["no"], errors="coerce").astype("Int64")
+    df["artist"] = df["artist"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
     return df
 
 def scrape_all(start=1958, end=2026) -> pd.DataFrame:
@@ -64,8 +66,17 @@ def scrape_all(start=1958, end=2026) -> pd.DataFrame:
     return pd.concat(list_of_tables, ignore_index=True)
 
 def collapse_to_songs(weekly: pd.DataFrame) -> pd.DataFrame:
-    """One row per song: first_week, weeks_at_1, no."""
-    # groupby song + artist, then .agg(first_week=("week","min"), weeks_at_1=("week","count"), ...)
+    weekly = weekly.copy()
+    weekly["no"] = weekly["no"].fillna(
+        weekly.groupby(["song", "artist"])["no"].transform("min")
+    )
+    songs = weekly.groupby("no").agg(
+        song=("song", "first"),
+        artist=("artist", "first"),
+        first_week=("week", "min"),
+        weeks_at_1=("week", "count"),
+    ).reset_index()
+    return songs
 
 if __name__ == "__main__":
     html = fetch_year(2023)
