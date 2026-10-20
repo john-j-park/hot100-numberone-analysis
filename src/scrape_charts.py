@@ -32,19 +32,36 @@ def find_chart_table(html: str) -> pd.DataFrame:
 
     potential_tables = []
     for t in tables:
-        if "Issue date" in list(t):
+        if any(str(c).startswith("Issue date") for c in t.columns):
             potential_tables.append(t)
 
     return potential_tables[len(potential_tables)-1]
 
 def clean_year(df: pd.DataFrame, year: int) -> pd.DataFrame:
     """Weekly rows with tidy columns: no, song, artist, week (a real date)."""
-    # rename Title->Song, drop Ref., strip quotes and [footnotes],
-    # turn "January 28" + year into a date with pd.to_datetime,
-    # pull the number out of "397 (re)" (hint: .str.extract(r"(\d+)")).
+    # Renames and cleans table
+    df = df.drop(columns=["Ref."],errors="ignore")
+    df = df.drop(columns=["Reference"],errors="ignore")
+    df = df.drop(columns=["Reference(s)"],errors="ignore")
+    df.columns = ["no", "week", "song", "artist"]
+    df = df[df["song"].str.contains('"', na=False)]
+    df["week"] = df["week"].str.replace(r"\[.*?\]", "", regex=True).str.strip()
+    new_column = df["week"]+ " " + str(year)
+    new_column = pd.to_datetime(new_column, format="%B %d %Y")
+    df["week"] = new_column
+    new_song = df["song"]
+    new_song = new_song.str.extract(r'"(.*?)"',expand=False)
+    df["song"] = new_song
+
+    return df
 
 def scrape_all(start=1958, end=2026) -> pd.DataFrame:
     """All weekly rows for every year, concatenated."""
+    list_of_tables = []
+    for y in range(start,end):
+        list_of_tables.append(clean_year(find_chart_table(fetch_year(y)), y))
+
+    return pd.concat(list_of_tables, ignore_index=True)
 
 def collapse_to_songs(weekly: pd.DataFrame) -> pd.DataFrame:
     """One row per song: first_week, weeks_at_1, no."""
